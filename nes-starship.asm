@@ -19,6 +19,9 @@ pointerBackgroundHighByte .rs 1
 
 RESET:
     JSR LoadBackground
+    JSR LoadPalettes
+    JSR LoadAttributes
+
     LDA #%10000000      ; enable NMI, sprites and background on table 0
     STA $2000       ; load into ppu control register 1
     LDA #%00011110      ; enable sprites and background
@@ -56,16 +59,51 @@ LoadBackground:
     BNE .Loop
     RTS
 
+LoadPalettes:
+    LDA $2002       ; read from $2002 to reset vram address registers $2005 and $2006
+    LDA #$3F        ; $3F00 is where color palettes are stored in ppu memory (see ppu memory map in pdf)
+    STA $2006
+    LDA #$00
+    STA $2006
+
+    LDX #$00
+.Loop               ; labels that start with periods are local and not available outside of the parent label
+    LDA palettes, x
+    STA $2007       ; write to vram i/o register
+    INX
+    CPX #$20        ; only 32 total bytes of palette data
+    BNE .Loop
+    RTS
+
+LoadAttributes:
+    LDA $2002
+    LDA #$23        ; $23C0 is attribute table 0 in the ppu memory map
+    STA $2006
+    LDA #$C0
+    STA $2006
+
+    LDX #$00
+.Loop
+    LDA attributes, x
+    STA $2007
+    INX
+    CPX #$40        ; load 64 bytes of attribute data for our background
+    BNE .Loop
+    RTS
 
 NMI:
     RTI
 
 
-; INTERUPTS
+; PROGRAM PART 2 + INTERUPTS
     .bank 1     ; allocate another 8kb bank of memory for PRG-ROM for 16 kb total
     .org $E000
 background:
     .include "graphics/background.asm"
+palettes:
+    .include "graphics/palettes.asm"
+attributes:
+    .include "graphics/attributes.asm"
 
     .org $FFFA
     .dw NMI
