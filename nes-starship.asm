@@ -13,6 +13,9 @@
 pointerBackgroundLowByte .rs 1
 pointerBackgroundHighByte .rs 1
 
+playerY = $0300     ; make player's coordinates variables so we can modify them programatically
+playerX = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
+
 ; PROGRAM
     .bank 0         ; 8kb bank for PRG-ROM
     .org $C000
@@ -102,13 +105,68 @@ LoadSprites:
     BNE .Loop
     RTS
 
+ReadController:
+    LDA #$01        ; load 1 into $4016 - bit 1 signals the controller to poll its input
+    STA $4016       ; $4016 is the address of the i/o input for controller one, but loading 1 here sets up both controllers to be read from
+    LDA #$00        ; load 0 into $4016 to signal we have finished polling
+    STA $4016       
+                    ; read from controller 1's polled i/o input to get input controls
+                    ; each read gives 1 bit of info and controls are read in a fixed order
+    LDA $4016       ; A
+    LDA $4016       ; B
+    LDA $4016       ; Select
+    LDA $4016       ; Start
+ReadUp:
+    LDA $4016           ; Up
+    AND #%00000001      ; check if the player input the controller, we get back a single bit
+    BEQ EndReadUp       ; if we did not get the control, skip
+
+    LDA playerY
+    SEC                 ; set carry - in 6502 you must set the carry before SBC; if the carry is cleared 
+    SBC #$01            ; it indicates that a borrow occurred
+    STA playerY
+EndReadUp:
+ReadDown:
+    LDA $4016       ; Down
+    AND #%00000001
+    BEQ EndReadDown
+
+    LDA playerY
+    CLC                 ; clear the carry flag otherwise it could add unnecessarily to our result
+    ADC #$01
+    STA playerY
+EndReadDown:
+ReadLeft:
+    LDA $4016       ; Left
+    AND #%00000001
+    BEQ EndReadLeft
+
+    LDA playerX
+    SEC
+    SBC #$01
+    STA playerX
+EndReadLeft:
+ReadRight:
+    LDA $4016       ; Right
+    AND #%00000001
+    BEQ EndReadRight
+
+    LDA playerX
+    CLC
+    ADC #$01
+    STA playerX
+EndReadRight:
+    RTS
+
 NMI:            ; Non Maskable Interrupt - this gets called once per frame - we constantly modify sprite data, so to update it we must update the data before every frame
     LDA #$00
     STA $2003       ; SPR-RAM address register - storing address here to initiate DMA as it's more efficient than manually writing lots of sprite data to ppu
     LDA #$03
     STA $4014       ; writing to $4014, the sprite DMA register, initiates DMA for 256 bytes starting from the given address 
-    RTI             ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
+                    ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
                     ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
+    JSR ReadController
+    RTI
 
 ; PROGRAM PART 2 + INTERUPTS
     .bank 1     ; allocate another 8kb bank of memory for PRG-ROM for 16 kb total
