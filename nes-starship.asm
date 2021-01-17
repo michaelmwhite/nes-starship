@@ -21,6 +21,7 @@ RESET:
     JSR LoadBackground
     JSR LoadPalettes
     JSR LoadAttributes
+    JSR LoadSprites
 
     LDA #%10000000      ; enable NMI, sprites and background on table 0
     STA $2000       ; load into ppu control register 1
@@ -91,9 +92,23 @@ LoadAttributes:
     BNE .Loop
     RTS
 
-NMI:
-    RTI
+LoadSprites:
+    LDA #$00
+.Loop
+    LDA sprites, x
+    STA $0300, x        ; load our sprites into ram at address $0300 - we will be accessing these sprites via DMA (direct memory access)
+    INX                 ; so no need to draw them to the ppu here
+    CPX #$04            ; loop 4 times as we only have 4 bytes of sprite data
+    BNE .Loop
+    RTS
 
+NMI:            ; Non Maskable Interrupt - this gets called once per frame - we constantly modify sprite data, so to update it we must update the data before every frame
+    LDA #$00
+    STA $2003       ; SPR-RAM address register - storing address here to initiate DMA as it's more efficient than manually writing lots of sprite data to ppu
+    LDA #$03
+    STA $4014       ; writing to $4014, the sprite DMA register, initiates DMA for 256 bytes starting from the given address 
+    RTI             ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
+                    ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
 
 ; PROGRAM PART 2 + INTERUPTS
     .bank 1     ; allocate another 8kb bank of memory for PRG-ROM for 16 kb total
@@ -104,6 +119,8 @@ palettes:
     .include "graphics/palettes.asm"
 attributes:
     .include "graphics/attributes.asm"
+sprites:
+    .include "graphics/sprites.asm"
 
     .org $FFFA
     .dw NMI
