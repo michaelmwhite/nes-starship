@@ -9,18 +9,18 @@
     .inesmap 0      ; NES mapper
     .inesmir 1      ; VRAM mirroring banks
 
-    .rsset $0000        ; Allocate variables starting at address $0000 
+    .rsset $0000        ; Allocate variables starting at address $0000 - the zero page
 pointerBackgroundLowByte .rs 1
 pointerBackgroundHighByte .rs 1
-
-playerY = $0300     ; make player's coordinates variables so we can modify them programatically
-playerX = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
+playerY .rs 1     ; make player's coordinates variables so we can modify them programatically
+playerX .rs 1
 
 ; PROGRAM
     .bank 0         ; 8kb bank for PRG-ROM
     .org $C000
 
 RESET:
+    JSR InitVariables
     JSR LoadBackground
     JSR LoadPalettes
     JSR LoadAttributes
@@ -35,6 +35,12 @@ RESET:
     STA $2006
     STA $2005
     STA $2005
+
+InitVariables:
+    LDA #$80
+    STA playerY
+    STA playerX
+    RTS
 
 LoadBackground:
     LDA $2002       ; $2002 is a ppu status register, reading it resets bit 7 which means vblank is not occuring; $2006 and $2007 are also reset
@@ -96,7 +102,7 @@ LoadAttributes:
     RTS
 
 LoadSprites:
-    LDA #$00
+    LDX #$00
 .Loop
     LDA sprites, x
     STA $0300, x        ; load our sprites into ram at address $0300 - we will be accessing these sprites via DMA (direct memory access)
@@ -104,6 +110,12 @@ LoadSprites:
     CPX #$04            ; loop 4 times as we only have 4 bytes of sprite data
     BNE .Loop
     RTS
+
+UpdateSprites:
+    LDA playerY
+    STA $0300
+    LDA playerX
+    STA $0303
 
 ReadController:
     LDA #$01        ; load 1 into $4016 - bit 1 signals the controller to poll its input
@@ -166,6 +178,7 @@ NMI:            ; Non Maskable Interrupt - this gets called once per frame - we 
                     ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
                     ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
     JSR ReadController
+    JSR UpdateSprites
     RTI
 
 ; PROGRAM PART 2 + INTERUPTS
