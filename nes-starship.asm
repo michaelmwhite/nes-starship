@@ -15,6 +15,7 @@ pointerBackgroundHighByte .rs 1
 
 playerY = $0300     ; make player's coordinates variables so we can modify them programatically
 playerX = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
+entities = $0304
 
 ; PROGRAM
     .bank 0         ; 8kb bank for PRG-ROM
@@ -96,7 +97,7 @@ LoadAttributes:
     RTS
 
 LoadSprites:
-    LDA #$00
+    LDX #$00
 .Loop
     LDA sprites, x
     STA $0300, x        ; load our sprites into ram at address $0300 - we will be accessing these sprites via DMA (direct memory access)
@@ -112,7 +113,20 @@ ReadController:
     STA $4016       
                     ; read from controller 1's polled i/o input to get input controls
                     ; each read gives 1 bit of info and controls are read in a fixed order
+ReadA:
     LDA $4016       ; A
+    AND #%00000001
+    BEQ EndReadA
+
+    LDA playerY
+    STA $0304
+    LDA #$06
+    STA $0305
+    LDA #$00
+    STA $0306
+    LDA playerX
+    STA $0307
+EndReadA:
     LDA $4016       ; B
     LDA $4016       ; Select
     LDA $4016       ; Start
@@ -158,6 +172,30 @@ ReadRight:
 EndReadRight:
     RTS
 
+UpdateEntity:       ; update game entities like bullets and enemy ships - these are stored at $0300 in memory (where we store sprite data)
+    LDY #$00        ; BEWARE - the x register is also used to calculate the stack pointer, so be careful modifying it!
+.Loop
+    INY
+    LDA entities, y
+    CMP #$00        ; if the id of the sprite is not zero, handle its logic - todo default in mem appears to be 255 so zero memory in future?
+    BNE .HandleEntity
+    INY             ; since the entity has id zero, skip updating it
+    INY
+    INY
+    JMP .LoopCheck
+.HandleEntity
+    INY
+    INY
+    LDA entities, y        ; add to the y value of the entity to move it - this is bullet logic only rnow
+    CLC
+    ADC #$03
+    STA entities, y
+    INY
+.LoopCheck
+    CPY #$04        ; 4 bytes per entity, 256 bytes total, 4 are already used for player, so 252 / 4 = 63 remaining entities
+    BNE .Loop
+    RTS             
+
 NMI:            ; Non Maskable Interrupt - this gets called once per frame - we constantly modify sprite data, so to update it we must update the data before every frame
     LDA #$00
     STA $2003       ; SPR-RAM address register - storing address here to initiate DMA as it's more efficient than manually writing lots of sprite data to ppu
@@ -166,6 +204,7 @@ NMI:            ; Non Maskable Interrupt - this gets called once per frame - we 
                     ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
                     ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
     JSR ReadController
+    JSR UpdateEntity
     RTI
 
 ; PROGRAM PART 2 + INTERUPTS
