@@ -118,14 +118,32 @@ ReadA:
     AND #%00000001
     BEQ EndReadA
 
-    LDA playerY
-    STA $0304
-    LDA #$06
-    STA $0305
-    LDA #$00
-    STA $0306
-    LDA playerX
-    STA $0307
+    LDY #$00
+.LoopA
+    INY
+    LDA entities, y
+    CMP #$00
+    BNE .SkipEntity
+    DEY             ; make a new bullet object at the player's coordinates
+    LDA playerY     ; y
+    STA entities, y
+    INY
+    LDA #06         ; sprite id
+    STA entities, y
+    INY 
+    LDA #00         ; attributes
+    STA entities, y
+    INY
+    LDA playerX     ; x
+    STA entities, y
+    JMP EndReadA
+.SkipEntity
+    INY
+    INY
+.LoopCheckA
+    INY
+    CPY #$FC
+    BNE .LoopA 
 EndReadA:
     LDA $4016       ; B
     LDA $4016       ; Select
@@ -181,7 +199,6 @@ UpdateEntity:       ; update game entities like bullets and enemy ships - these 
     BNE .HandleEntity
     INY             ; since the entity has id zero, skip updating it
     INY
-    INY
     JMP .LoopCheck
 .HandleEntity
     INY
@@ -189,10 +206,20 @@ UpdateEntity:       ; update game entities like bullets and enemy ships - these 
     LDA entities, y        ; add to the y value of the entity to move it - this is bullet logic only rnow
     CLC
     ADC #$03
+    BCS .ClearBullet        ; branch if carry is set - indicative of overflow; off the screen
+.MoveBullet
+    STA entities, y
+    JMP .LoopCheck
+.ClearBullet
+    LDA #$00
+    DEY
+    DEY
     STA entities, y
     INY
+    INY
 .LoopCheck
-    CPY #$04        ; 4 bytes per entity, 256 bytes total, 4 are already used for player, so 252 / 4 = 63 remaining entities
+    INY
+    CPY #$FC        ; 4 bytes per entity, 256 bytes total, 4 are already used for player, so 252 / 4 = 63 remaining entities
     BNE .Loop
     RTS             
 
