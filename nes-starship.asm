@@ -9,10 +9,13 @@
     .inesmap 0      ; NES mapper
     .inesmir 1      ; VRAM mirroring banks
 
-    .rsset $0000        ; Allocate variables starting at address $0000 
-pointerBackgroundLowByte .rs 1
+                                ; Note: from 0x0100 to 0x01FF is the 6502's 256 byte stack
+    .rsset $0000                ; Allocate variables starting at address $0000 
+pointerBackgroundLowByte .rs 1  ; Note: the name of the variable represents the memory address itself
 pointerBackgroundHighByte .rs 1
+aToggle .rs 1                   ; make a button a toggle so it can't be held continuously - 0 is ignore, 1 is accept
 
+; CONSTANTS - these cannot be changed via manipulating memory
 playerY = $0300     ; make player's coordinates variables so we can modify them programatically
 playerX = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
 entities = $0304
@@ -22,6 +25,7 @@ entities = $0304
     .org $C000
 
 RESET:
+    JSR InitVariables
     JSR LoadBackground
     JSR LoadPalettes
     JSR LoadAttributes
@@ -36,6 +40,11 @@ RESET:
     STA $2006
     STA $2005
     STA $2005
+
+InitVariables:
+    LDA #01
+    STA aToggle
+    RTS
 
 LoadBackground:
     LDA $2002       ; $2002 is a ppu status register, reading it resets bit 7 which means vblank is not occuring; $2006 and $2007 are also reset
@@ -114,10 +123,21 @@ ReadController:
                     ; read from controller 1's polled i/o input to get input controls
                     ; each read gives 1 bit of info and controls are read in a fixed order
 ReadA:
-    LDA $4016       ; A
+    LDA $4016           ; A
     AND #%00000001
-    BEQ EndReadA
+    BEQ ResetAToggle    ; if not pressed, reset a's toggle
+    LDA aToggle
+    BEQ EndReadA       ; if the toggle is invalid, skip
+    JMP ProcessReadA    ; otherwise, process read a
 
+ResetAToggle:
+    LDA #$01
+    STA aToggle
+    JMP EndReadA
+
+ProcessReadA:
+    LDA #$00
+    STA aToggle     ; disable the a toggle so they must lift the button to fire another bullet
     LDY #$00
 .LoopA
     INY
@@ -195,7 +215,7 @@ UpdateEntity:       ; update game entities like bullets and enemy ships - these 
 .Loop
     INY
     LDA entities, y
-    CMP #$00        ; if the id of the sprite is not zero, handle its logic - todo default in mem appears to be 255 so zero memory in future?
+    CMP #$00        ; if the id of the sprite is not zero, handle its logic - default in mem appears to be 255 so zero memory in future?
     BNE .HandleEntity
     INY             ; since the entity has id zero, skip updating it
     INY
