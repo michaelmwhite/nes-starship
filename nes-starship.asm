@@ -1,26 +1,38 @@
-; NES Starship
+; NES Starship - a simple NES game written in 6502 assembly code.
 ;
 ; Author: Michael White
 
 
-; HEADER
+
+;;;;;;;; PROGRAM INFO
+;; HEADER
+
     .inesprg 1      ; 16kb PRG-ROM banks
     .ineschr 1      ; 8kb CHR-ROM banks
     .inesmap 0      ; NES mapper
     .inesmir 1      ; VRAM mirroring banks
 
+
+;; VARIABLES
                                 ; Note: from 0x0100 to 0x01FF is the 6502's 256 byte stack
     .rsset $0000                ; Allocate variables starting at address $0000 
+
 pointerBackgroundLowByte .rs 1  ; Note: the name of the variable represents the memory address itself
 pointerBackgroundHighByte .rs 1
 aToggle .rs 1                   ; make a button a toggle so it can't be held continuously - 0 is ignore, 1 is accept
 
-; CONSTANTS - these cannot be changed via manipulating memory
-playerY = $0300     ; make player's coordinates variables so we can modify them programatically
-playerX = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
-entities = $0304
 
-; PROGRAM
+;; CONSTANTS - these cannot be changed via manipulating memory
+
+playerY     = $0300     ; make player's coordinates variables so we can modify them programatically
+playerX     = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
+entities    = $0304
+
+
+
+;;;;;;;; PROGRAM BANK 1
+;; RESET AND GAME SETUP
+
     .bank 0         ; 8kb bank for PRG-ROM
     .org $C000
 
@@ -42,8 +54,7 @@ RESET:
     STA $2005
 
 InitVariables:
-    LDA #01
-    STA aToggle
+    JSR ResetAToggle
     RTS
 
 LoadBackground:
@@ -115,35 +126,116 @@ LoadSprites:
     BNE .Loop
     RTS
 
+
+
+;;;;;;;; NMI LOOP    
+
+NMI:            ; Non Maskable Interrupt - this gets called once per frame - we constantly modify sprite data, so to update it we must update the data before every frame
+    LDA #$00
+    STA $2003       ; SPR-RAM address register - storing address here to initiate DMA as it's more efficient than manually writing lots of sprite data to ppu
+    LDA #$03
+    STA $4014       ; writing to $4014, the sprite DMA register, initiates DMA for 256 bytes starting from the given address 
+                    ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
+                    ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
+    JSR ReadController
+    JSR UpdateEntityLogic
+    RTI
+
+
+;; CONTROLLER INPUT
+
 ReadController:
     LDA #$01        ; load 1 into $4016 - bit 1 signals the controller to poll its input
     STA $4016       ; $4016 is the address of the i/o input for controller one, but loading 1 here sets up both controllers to be read from
     LDA #$00        ; load 0 into $4016 to signal we have finished polling
     STA $4016       
-                    ; read from controller 1's polled i/o input to get input controls
-                    ; each read gives 1 bit of info and controls are read in a fixed order
-ReadA:
+                    ; read from controller 1's polled i/o input to get input controls; each read gives 1 bit of info and controls are read in a fixed order
+
     LDA $4016           ; A
     AND #%00000001
-    BEQ ResetAToggle    ; if not pressed, reset a's toggle
+    BEQ .ANotPressed    ; if not pressed, reset a's toggle
     LDA aToggle
-    BEQ EndReadA       ; if the toggle is invalid, skip
-    JMP ProcessReadA    ; otherwise, process read a
+    BEQ .EndReadA
+    JSR FireBullet
+    JMP .EndReadA
+.ANotPressed:
+    JSR ResetAToggle
+.EndReadA:
+    LDA $4016           ; B
+    LDA $4016           ; Select
+    LDA $4016           ; Start
+    LDA $4016           ; Up
+    AND #%00000001
+    BEQ .EndReadUp
+    JSR MovePlayerUp
+.EndReadUp:
+    LDA $4016           ; Down
+    AND #%00000001
+    BEQ .EndReadDown
+    JSR MovePlayerDown
+.EndReadDown:
+    LDA $4016           ; Left
+    AND #%00000001
+    BEQ .EndReadLeft
+    JSR MovePlayerLeft
+.EndReadLeft:
+    LDA $4016           ; Right
+    AND #%00000001
+    BEQ .EndReadRight
+    JSR MovePlayerRight
+.EndReadRight:
+    RTS
+
+
+;; GAME LOGIC
+
+MovePlayerUp:
+    LDA playerY
+    SEC                 ; set carry - in 6502 you must set the carry before SBC; if the carry is cleared 
+    SBC #$01            ; it indicates that a borrow occurred
+    STA playerY
+    RTS
+
+MovePlayerDown:
+    LDA playerY
+    CLC                 ; clear the carry flag otherwise it could add unnecessarily to our result
+    ADC #$01
+    STA playerY
+    RTS
+
+MovePlayerLeft:
+    LDA playerX
+    SEC
+    SBC #$01
+    STA playerX
+    RTS
+
+MovePlayerRight:
+    LDA playerX
+    CLC
+    ADC #$01
+    STA playerX
+    RTS
 
 ResetAToggle:
     LDA #$01
     STA aToggle
-    JMP EndReadA
+    RTS
 
-ProcessReadA:
+ClearAToggle:
     LDA #$00
     STA aToggle     ; disable the a toggle so they must lift the button to fire another bullet
+    RTS
+
+FireBullet:
+    JSR ClearAToggle
     LDY #$00
-.LoopA
+.EntityLoop
     INY
     LDA entities, y
     CMP #$00
     BNE .SkipEntity
+.SpawnBullet
     DEY             ; make a new bullet object at the player's coordinates
     LDA playerY     ; y
     STA entities, y
@@ -156,61 +248,16 @@ ProcessReadA:
     INY
     LDA playerX     ; x
     STA entities, y
-    JMP EndReadA
+    RTS
 .SkipEntity
     INY
     INY
-.LoopCheckA
     INY
     CPY #$FC
-    BNE .LoopA 
-EndReadA:
-    LDA $4016       ; B
-    LDA $4016       ; Select
-    LDA $4016       ; Start
-ReadUp:
-    LDA $4016           ; Up
-    AND #%00000001      ; check if the player input the controller, we get back a single bit
-    BEQ EndReadUp       ; if we did not get the control, skip
-
-    LDA playerY
-    SEC                 ; set carry - in 6502 you must set the carry before SBC; if the carry is cleared 
-    SBC #$01            ; it indicates that a borrow occurred
-    STA playerY
-EndReadUp:
-ReadDown:
-    LDA $4016       ; Down
-    AND #%00000001
-    BEQ EndReadDown
-
-    LDA playerY
-    CLC                 ; clear the carry flag otherwise it could add unnecessarily to our result
-    ADC #$01
-    STA playerY
-EndReadDown:
-ReadLeft:
-    LDA $4016       ; Left
-    AND #%00000001
-    BEQ EndReadLeft
-
-    LDA playerX
-    SEC
-    SBC #$01
-    STA playerX
-EndReadLeft:
-ReadRight:
-    LDA $4016       ; Right
-    AND #%00000001
-    BEQ EndReadRight
-
-    LDA playerX
-    CLC
-    ADC #$01
-    STA playerX
-EndReadRight:
+    BNE .EntityLoop 
     RTS
 
-UpdateEntity:       ; update game entities like bullets and enemy ships - these are stored at $0300 in memory (where we store sprite data)
+UpdateEntityLogic:       ; update game entities like bullets and enemy ships - these are stored at $0300 in memory (where we store sprite data)
     LDY #$00        ; BEWARE - the x register is also used to calculate the stack pointer, so be careful modifying it!
 .Loop
     INY
@@ -243,18 +290,11 @@ UpdateEntity:       ; update game entities like bullets and enemy ships - these 
     BNE .Loop
     RTS             
 
-NMI:            ; Non Maskable Interrupt - this gets called once per frame - we constantly modify sprite data, so to update it we must update the data before every frame
-    LDA #$00
-    STA $2003       ; SPR-RAM address register - storing address here to initiate DMA as it's more efficient than manually writing lots of sprite data to ppu
-    LDA #$03
-    STA $4014       ; writing to $4014, the sprite DMA register, initiates DMA for 256 bytes starting from the given address 
-                    ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
-                    ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
-    JSR ReadController
-    JSR UpdateEntity
-    RTI
 
-; PROGRAM PART 2 + INTERUPTS
+
+;;;;;;;; PROGRAM BANK 2 
+;; INCLUDES
+
     .bank 1     ; allocate another 8kb bank of memory for PRG-ROM for 16 kb total
     .org $E000
 background:
@@ -266,12 +306,18 @@ attributes:
 sprites:
     .include "graphics/sprites.asm"
 
+
+;; INTERRUPTS
+
     .org $FFFA
     .dw NMI
     .dw RESET
     .dw 0
 
-; GRAPHICS 
+
+
+;;;;;;;; GRAPHICS BANK
+
     .bank 2     ; allocate 8kb of memory for CHR-ROM for 8kb total
     .org $0000
     .incbin "graphics/tiles.chr"     ; include binary file, generate using program YY-CHR
