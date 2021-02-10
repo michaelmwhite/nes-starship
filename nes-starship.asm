@@ -183,6 +183,7 @@ ReadController:
     AND #%00000001
     BEQ .EndReadRight
     JSR MovePlayerRight
+    JSR CreateEnemy
 .EndReadRight:
     RTS
 
@@ -240,13 +241,42 @@ FireBullet:
     LDA playerY     ; y
     STA entities, y
     INY
-    LDA #06         ; sprite id
+    LDA #$06         ; sprite id
     STA entities, y
     INY 
-    LDA #00         ; attributes
+    LDA #$00         ; attributes
     STA entities, y
     INY
     LDA playerX     ; x
+    STA entities, y
+    RTS
+.SkipEntity
+    INY
+    INY
+    INY
+    CPY #$FC
+    BNE .EntityLoop 
+    RTS
+
+CreateEnemy:
+    LDY #$00
+.EntityLoop
+    INY
+    LDA entities, y
+    CMP #$00
+    BNE .SkipEntity
+.SpawnEnemy
+    DEY             
+    LDA playerY     ; y
+    STA entities, y
+    INY
+    LDA #$05         ; sprite id
+    STA entities, y
+    INY 
+    LDA #$01         ; attributes
+    STA entities, y
+    INY
+    LDA #$FF     ; x
     STA entities, y
     RTS
 .SkipEntity
@@ -262,22 +292,35 @@ UpdateEntityLogic:       ; update game entities like bullets and enemy ships - t
 .Loop
     INY
     LDA entities, y
-    CMP #$00        ; if the id of the sprite is not zero, handle its logic - default in mem appears to be 255 so zero memory in future?
-    BNE .HandleEntity
+    CMP #$05        ; $05 is the id of the enemy ship
+    BEQ .HandleEnemy
+    LDA entities, y
+    CMP #$00        ; if $00 do nothing
+    BNE .HandleBullet
     INY             ; since the entity has id zero, skip updating it
     INY
     JMP .LoopCheck
-.HandleEntity
+.HandleEnemy
+    INY
+    INY
+    LDA entities, y
+    SEC
+    SBC #$02
+    BCC .ClearEntity
+.MoveEnemy
+    STA entities, y
+    JMP .LoopCheck
+.HandleBullet
     INY
     INY
     LDA entities, y        ; add to the y value of the entity to move it - this is bullet logic only rnow
     CLC
     ADC #$03
-    BCS .ClearBullet        ; branch if carry is set - indicative of overflow; off the screen
+    BCS .ClearEntity        ; branch if carry is set - indicative of overflow; off the screen
 .MoveBullet
     STA entities, y
     JMP .LoopCheck
-.ClearBullet
+.ClearEntity
     LDA #$00
     DEY
     DEY
