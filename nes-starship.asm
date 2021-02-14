@@ -20,6 +20,7 @@
 pointerBackgroundLowByte .rs 1  ; Note: the name of the variable represents the memory address itself
 pointerBackgroundHighByte .rs 1
 aToggle .rs 1                   ; make a button a toggle so it can't be held continuously - 0 is ignore, 1 is accept
+spawnTimer .rs 1                ; add to spawn timer every NMI loop, whenever overflow spawn enemy
 
 
 ;; CONSTANTS - these cannot be changed via manipulating memory
@@ -54,6 +55,8 @@ RESET:
     STA $2005
 
 InitVariables:
+    LDA #$00
+    STA spawnTimer
     JSR ResetAToggle
     RTS
 
@@ -138,6 +141,7 @@ NMI:            ; Non Maskable Interrupt - this gets called once per frame - we 
                     ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
                     ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
     JSR ReadController
+    JSR UpdateSpawnTimer
     JSR UpdateEntityLogic
     RTI
 
@@ -183,7 +187,6 @@ ReadController:
     AND #%00000001
     BEQ .EndReadRight
     JSR MovePlayerRight
-    JSR CreateEnemy
 .EndReadRight:
     RTS
 
@@ -256,6 +259,16 @@ FireBullet:
     INY
     CPY #$FC
     BNE .EntityLoop 
+    RTS
+
+UpdateSpawnTimer:
+    LDA spawnTimer
+    CLC
+    ADC #$04
+    STA spawnTimer
+    BCC .EndUpdateSpawnTimer
+    JSR CreateEnemy
+.EndUpdateSpawnTimer
     RTS
 
 CreateEnemy:
