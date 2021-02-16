@@ -21,13 +21,15 @@ pointerBackgroundLowByte .rs 1  ; Note: the name of the variable represents the 
 pointerBackgroundHighByte .rs 1
 aToggle .rs 1                   ; make a button a toggle so it can't be held continuously - 0 is ignore, 1 is accept
 spawnTimer .rs 1                ; add to spawn timer every NMI loop, whenever overflow spawn enemy
-
+entityYOffset .rs 1        
+entityXOffset .rs 1
 
 ;; CONSTANTS - these cannot be changed via manipulating memory
 
 playerY     = $0300     ; make player's coordinates variables so we can modify them programatically
 playerX     = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
 entities    = $0304
+spriteWidth = $08
 
 
 
@@ -231,6 +233,13 @@ ClearAToggle:
     STA aToggle     ; disable the a toggle so they must lift the button to fire another bullet
     RTS
 
+ResetPlayer:
+    LDA #$10
+    STA playerX
+    LDA #$78
+    STA playerY
+    RTS
+
 FireBullet:
     JSR ClearAToggle
     LDY #$00
@@ -271,6 +280,54 @@ UpdateSpawnTimer:
 .EndUpdateSpawnTimer
     RTS
 
+CheckUpperLeftEnemyCollision:       ; NOTE: entityY and entityX must be updated before calling and return value will be in accumulator
+    LDY entityYOffset               
+    LDA entities, y
+    CMP playerY
+    BMI .NoEnemyCollision           ; y must be greater than playerY
+    SEC
+    SBC #spriteWidth                
+    CMP playerY
+    BPL .NoEnemyCollision           ; y - 8 must be less than playerY
+    LDY entityXOffset
+    LDA entities, y
+    CMP playerX
+    BMI .NoEnemyCollision           ; x must be greater than playerX
+    SEC
+    SBC #spriteWidth
+    CMP playerX
+    BPL .NoEnemyCollision           ; x - 8 must be less than playerX
+.WasEnemyCollision    
+    LDA #$01
+    RTS
+.NoEnemyCollision
+    LDA #$00
+    RTS
+
+CheckLowerLeftEnemyCollision:       ; NOTE: entityY and entityX must be updated before calling and return value will be in accumulator
+    LDY entityYOffset               
+    LDA entities, y
+    CMP playerY
+    BPL .NoEnemyCollision           ; y must be less than playerY
+    CLC
+    ADC #spriteWidth                
+    CMP playerY
+    BMI .NoEnemyCollision           ; y + 8 must be greater than playerY
+    LDY entityXOffset
+    LDA entities, y
+    CMP playerX
+    BMI .NoEnemyCollision           ; x must be greater than playerX
+    SEC
+    SBC #spriteWidth
+    CMP playerX
+    BPL .NoEnemyCollision           ; x - 8 must be less than playerX
+.WasEnemyCollision    
+    LDA #$01
+    RTS
+.NoEnemyCollision
+    LDA #$00
+    RTS
+
 CreateEnemy:
     LDY #$00
 .EntityLoop
@@ -303,6 +360,7 @@ CreateEnemy:
 UpdateEntityLogic:       ; update game entities like bullets and enemy ships - these are stored at $0300 in memory (where we store sprite data)
     LDY #$00        ; BEWARE - the x register is also used to calculate the stack pointer, so be careful modifying it!
 .Loop
+    STY entityYOffset
     INY
     LDA entities, y
     CMP #$05        ; $05 is the id of the enemy ship
@@ -321,7 +379,19 @@ UpdateEntityLogic:       ; update game entities like bullets and enemy ships - t
     SBC #$02
     BCC .ClearEntity
 .MoveEnemy
-    STA entities, y
+    STA entities, y         ; update the enemy's position
+    STY entityXOffset       ; store the current y register
+    JSR CheckLowerLeftEnemyCollision
+    CMP #$01                ; using the accumulator as a return value from our collision function - 1 is collision, 0 is no collision
+    BEQ .HandleCollision    
+    JSR CheckUpperLeftEnemyCollision
+    CMP #$01
+    BEQ .HandleCollision
+    LDY entityXOffset       ; restore the y register as CheckEnemyCollision will modify it
+    JMP .LoopCheck
+.HandleCollision
+    LDY entityXOffset       ; restore the y register as CheckEnemyCollision will modify it
+    JSR ResetPlayer         ; player dies
     JMP .LoopCheck
 .HandleBullet
     INY
