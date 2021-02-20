@@ -21,8 +21,10 @@ pointerBackgroundLowByte .rs 1  ; Note: the name of the variable represents the 
 pointerBackgroundHighByte .rs 1
 aToggle .rs 1                   ; make a button a toggle so it can't be held continuously - 0 is ignore, 1 is accept
 spawnTimer .rs 1                ; add to spawn timer every NMI loop, whenever overflow spawn enemy
-entityYOffset .rs 1        
-entityXOffset .rs 1
+enemyYOffset .rs 1        
+enemyXOffset .rs 1
+entityY .rs 1
+entityX .rs 1
 
 ;; CONSTANTS - these cannot be changed via manipulating memory
 
@@ -30,7 +32,7 @@ playerY     = $0300     ; make player's coordinates variables so we can modify t
 playerX     = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
 entities    = $0304
 spriteWidth = $08
-bulletsAllocationSize = $20     ; allow max of 8 bullets
+bulletsAllocationSize = $30     ; allow max of 12 bullets
 entityAllocationSize = $FC      ; 252 bytes for entities (player is 4 bytes, so 256 total bytes for sprites)
 
 
@@ -242,6 +244,14 @@ ResetPlayer:
     STA playerY
     RTS
 
+ResetEnemy:
+    LDA #$00
+    LDY enemyYOffset
+    STA entities, y
+    LDY enemyXOffset
+    STA entities, y
+    RTS
+
 FireBullet:
     JSR ClearAToggle
     LDY #$00
@@ -283,21 +293,21 @@ UpdateSpawnTimer:
     RTS
 
 CheckUpperLeftEnemyCollision:       ; NOTE: entityY and entityX must be updated before calling and return value will be in accumulator
-    LDY entityYOffset               
+    LDY enemyYOffset               
     LDA entities, y
-    CMP playerY
+    CMP entityY
     BMI .NoEnemyCollision           ; y must be greater than playerY
     SEC
     SBC #spriteWidth                
-    CMP playerY
+    CMP entityY
     BPL .NoEnemyCollision           ; y - 8 must be less than playerY
-    LDY entityXOffset
+    LDY enemyXOffset
     LDA entities, y
-    CMP playerX
+    CMP entityX
     BMI .NoEnemyCollision           ; x must be greater than playerX
     SEC
     SBC #spriteWidth
-    CMP playerX
+    CMP entityX
     BPL .NoEnemyCollision           ; x - 8 must be less than playerX
 .WasEnemyCollision    
     LDA #$01
@@ -307,27 +317,82 @@ CheckUpperLeftEnemyCollision:       ; NOTE: entityY and entityX must be updated 
     RTS
 
 CheckLowerLeftEnemyCollision:       ; NOTE: entityY and entityX must be updated before calling and return value will be in accumulator
-    LDY entityYOffset               
+    LDY enemyYOffset               
     LDA entities, y
-    CMP playerY
+    CMP entityY
     BPL .NoEnemyCollision           ; y must be less than playerY
     CLC
     ADC #spriteWidth                
-    CMP playerY
+    CMP entityY
     BMI .NoEnemyCollision           ; y + 8 must be greater than playerY
-    LDY entityXOffset
+    LDY enemyXOffset
     LDA entities, y
-    CMP playerX
+    CMP entityX
     BMI .NoEnemyCollision           ; x must be greater than playerX
     SEC
     SBC #spriteWidth
-    CMP playerX
+    CMP entityX
     BPL .NoEnemyCollision           ; x - 8 must be less than playerX
 .WasEnemyCollision    
     LDA #$01
     RTS
 .NoEnemyCollision
     LDA #$00
+    RTS
+
+CheckEnemyCollision:                ; NOTE: enemyY and enemyX must be updated before calling
+    ;; PLAYER COLLISION
+    LDA playerY
+    STA entityY
+    LDA playerX
+    STA entityX
+    JSR CheckLowerLeftEnemyCollision
+    CMP #$01                ; using the accumulator as a return value from our collision function - 1 is collision, 0 is no collision
+    BEQ .PlayerCollision    
+    JSR CheckUpperLeftEnemyCollision
+    CMP #$01
+    BEQ .PlayerCollision
+    
+    ;; BULLET COLLISION
+    LDY #$00
+.BulletLoop
+    LDA entities, y                 ; y position
+    STA entityY
+    INY
+    LDA entities, y                 ; id
+    CMP #$06                        ; is bullet id
+    BEQ .CheckBulletCollision
+    JMP .SkipBullet
+.CheckBulletCollision
+    INY
+    INY
+    LDA entities, y                 ; x position
+    STA entityX
+    TYA
+    PHA                             ; save y counter on stack as collision functions will modify it
+    JSR CheckLowerLeftEnemyCollision
+    CMP #$01
+    BEQ .BulletCollision    
+    JSR CheckUpperLeftEnemyCollision
+    CMP #$01
+    BEQ .BulletCollision
+    PLA                             ; restore y counter
+    TAY
+    JMP .LoopCheck
+.SkipBullet
+    INY
+    INY
+.LoopCheck
+    INY
+    CPY #bulletsAllocationSize
+    BNE .BulletLoop
+    RTS
+
+.PlayerCollision
+    JSR ResetPlayer         ; player dies
+    RTS
+.BulletCollision
+    JSR ResetEnemy
     RTS
 
 CreateEnemy:
@@ -362,7 +427,7 @@ CreateEnemy:
 UpdateEntityLogic:       ; update game entities like bullets and enemy ships - these are stored at $0300 in memory (where we store sprite data)
     LDY #$00        ; BEWARE - the x register is also used to calculate the stack pointer, so be careful modifying it!
 .Loop
-    STY entityYOffset
+    STY enemyYOffset
     INY
     LDA entities, y
     CMP #$05        ; $05 is the id of the enemy ship
@@ -382,18 +447,9 @@ UpdateEntityLogic:       ; update game entities like bullets and enemy ships - t
     BCC .ClearEntity
 .MoveEnemy
     STA entities, y         ; update the enemy's position
-    STY entityXOffset       ; store the current y register
-    JSR CheckLowerLeftEnemyCollision
-    CMP #$01                ; using the accumulator as a return value from our collision function - 1 is collision, 0 is no collision
-    BEQ .HandleCollision    
-    JSR CheckUpperLeftEnemyCollision
-    CMP #$01
-    BEQ .HandleCollision
-    LDY entityXOffset       ; restore the y register as CheckEnemyCollision will modify it
-    JMP .LoopCheck
-.HandleCollision
-    LDY entityXOffset       ; restore the y register as CheckEnemyCollision will modify it
-    JSR ResetPlayer         ; player dies
+    STY enemyXOffset       ; store the current y register
+    JSR CheckEnemyCollision
+    LDY enemyXOffset       ; restore the y register as CheckEnemyCollision will modify it
     JMP .LoopCheck
 .HandleBullet
     INY
