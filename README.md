@@ -1,5 +1,5 @@
 # nes-starship
-An Assembly 6502 NES game
+A spaceship NES game written in Assembly 6502.
 
 ## Compile Game
 Compile an nes executable version of the game using the following command from the root directory of the project.
@@ -7,3 +7,6 @@ Compile an nes executable version of the game using the following command from t
 ```
 .\nesasm-windows\NESASM.exe nes-starship.asm
 ```
+
+## Demo
+![](https://github.com/michaelmwhite/nes-starship/blob/main/recordings/demo_1.gif)
