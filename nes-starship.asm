@@ -30,6 +30,8 @@ playerY     = $0300     ; make player's coordinates variables so we can modify t
 playerX     = $0303     ; these variables are pointers to the y and x positions where we store our sprite variables in memory 
 entities    = $0304
 spriteWidth = $08
+bulletsAllocationSize = $20     ; allow max of 8 bullets
+entityAllocationSize = $FC      ; 252 bytes for entities (player is 4 bytes, so 256 total bytes for sprites)
 
 
 
@@ -266,7 +268,7 @@ FireBullet:
     INY
     INY
     INY
-    CPY #$FC
+    CPY #bulletsAllocationSize
     BNE .EntityLoop 
     RTS
 
@@ -329,7 +331,7 @@ CheckLowerLeftEnemyCollision:       ; NOTE: entityY and entityX must be updated 
     RTS
 
 CreateEnemy:
-    LDY #$00
+    LDY #bulletsAllocationSize
 .EntityLoop
     INY
     LDA entities, y
@@ -353,7 +355,7 @@ CreateEnemy:
     INY
     INY
     INY
-    CPY #$FC
+    CPY #entityAllocationSize
     BNE .EntityLoop 
     RTS
 
@@ -412,7 +414,7 @@ UpdateEntityLogic:       ; update game entities like bullets and enemy ships - t
     INY
 .LoopCheck
     INY
-    CPY #$FC        ; 4 bytes per entity, 256 bytes total, 4 are already used for player, so 252 / 4 = 63 remaining entities
+    CPY #entityAllocationSize        ; 4 bytes per entity, 256 bytes total, 4 are already used for player, so 252 / 4 = 63 remaining entities
     BNE .Loop
     RTS             
 
