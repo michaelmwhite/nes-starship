@@ -50,15 +50,19 @@ RESET:
     JSR LoadAttributes
     JSR LoadSprites
 
-    LDA #%10000000      ; enable NMI, sprites and background on table 0
-    STA $2000       ; load into ppu control register 1
-    LDA #%00011110      ; enable sprites and background
-    STA $2001       ; load into ppu control register 2
-    LDA #$00        ; clear vram address registers, this means no background scrolling
+    JSR CleanUpPPU
+
+CleanUpPPU:                 ; cleanup the ppu so the next frame registers appropriately - must be called after updating background
+    LDA #%10000000          ; enable NMI, sprites and background on table 0
+    STA $2000               ; load into ppu control register 1
+    LDA #%00011110          ; enable sprites and background
+    STA $2001               ; load into ppu control register 2
+    LDA #$00                ; clear vram address registers, this means no background scrolling
     STA $2006       
     STA $2006
     STA $2005
     STA $2005
+    RTS
 
 InitVariables:
     LDA #$00
@@ -135,17 +139,34 @@ LoadSprites:
     BNE .Loop
     RTS
 
+DrawScore:
+    LDA $2002           ; load ppu status register 
+    LDA #$20            ; will write to ppu memory address $203A - the background table starts at $2000
+    STA $2006           ; ppu address register - write two bytes to indicate address
+    LDA #$3A
+    STA $2006
+    LDA #$0A            ; write tile 10 (number zero)
+    STA $2007           ; ppu data register - writing to register outside of vblank can interfere with other write in progress, so don't do outside of that
+    RTS
+
 
 
 ;;;;;;;; NMI LOOP    
 
 NMI:            ; Non Maskable Interrupt - this gets called once per frame - we constantly modify sprite data, so to update it we must update the data before every frame
+    ;; BACKGROUND
+    JSR DrawScore
+    JSR CleanUpPPU
+    
+    ;; SPRITES
     LDA #$00
     STA $2003       ; SPR-RAM address register - storing address here to initiate DMA as it's more efficient than manually writing lots of sprite data to ppu
     LDA #$03
     STA $4014       ; writing to $4014, the sprite DMA register, initiates DMA for 256 bytes starting from the given address 
                     ; during DMA, the memory bus is in use and the cpu must wait until it finishes, and takes the equivalent of 512 cycles
                     ; since each sprite takes 4 bytes of data, we can only load 64 sprites total here
+    
+    ;; GAME LOGIC
     JSR ReadController
     JSR UpdateSpawnTimer
     JSR UpdateEntityLogic
