@@ -25,6 +25,8 @@ enemyYOffset .rs 1
 enemyXOffset .rs 1
 entityY .rs 1
 entityX .rs 1
+scoreOnesTile .rs 1
+scoreTensTile .rs 1
 
 ;; CONSTANTS - these cannot be changed via manipulating memory
 
@@ -34,6 +36,8 @@ entities    = $0304
 spriteWidth = $08
 bulletsAllocationSize = $30     ; allow max of 12 bullets
 entityAllocationSize = $FC      ; 252 bytes for entities (player is 4 bytes, so 256 total bytes for sprites)
+numberTilesOffset = $0A         ; the tile for the number zero is tile 10, and numbers are consecutive in the tilesheet
+numberTilesEnd = $14            ; the number 9 is at tile $13 (19), so tile $14 is not a number
 
 
 
@@ -65,7 +69,9 @@ CleanUpPPU:                 ; cleanup the ppu so the next frame registers approp
     RTS
 
 InitVariables:
-    LDA #$00
+    LDA #numberTilesOffset
+    STA scoreOnesTile
+    STA scoreTensTile
     STA spawnTimer
     JSR ResetAToggle
     RTS
@@ -141,12 +147,22 @@ LoadSprites:
 
 DrawScore:
     LDA $2002           ; load ppu status register 
+
+    ;; ONES PLACE
     LDA #$20            ; will write to ppu memory address $203A - the background table starts at $2000
     STA $2006           ; ppu address register - write two bytes to indicate address
     LDA #$3A
     STA $2006
-    LDA #$0A            ; write tile 10 (number zero)
+    LDA scoreOnesTile           ; write tile 10 (number zero)
     STA $2007           ; ppu data register - writing to register outside of vblank can interfere with other write in progress, so don't do outside of that
+    
+    ;; TENS PLACE
+    LDA #$20            
+    STA $2006           
+    LDA #$39
+    STA $2006
+    LDA scoreTensTile           
+    STA $2007           
     RTS
 
 
@@ -256,6 +272,28 @@ ResetAToggle:
 ClearAToggle:
     LDA #$00
     STA aToggle     ; disable the a toggle so they must lift the button to fire another bullet
+    RTS
+
+AddToScore:
+    LDA scoreOnesTile
+    CLC
+    ADC #$01
+    STA scoreOnesTile
+    CMP #numberTilesEnd
+    BNE .EndAddScore
+    LDA #numberTilesOffset 
+    STA scoreOnesTile
+    LDA scoreTensTile
+    CLC
+    ADC #$01
+    STA scoreTensTile
+.EndAddScore
+    RTS
+
+ClearScore:
+    LDA #numberTilesOffset
+    STA scoreOnesTile
+    STA scoreTensTile
     RTS
 
 ResetPlayer:
@@ -411,9 +449,11 @@ CheckEnemyCollision:                ; NOTE: enemyY and enemyX must be updated be
 
 .PlayerCollision
     JSR ResetPlayer         ; player dies
+    JSR ClearScore
     RTS
 .BulletCollision
-    JSR ResetEnemy
+    JSR ResetEnemy          ; enemy dies
+    JSR AddToScore
     RTS
 
 CreateEnemy:
