@@ -9,4 +9,4 @@ Compile an nes executable version of the game using the following command from t
 ```
 
 ## Demo
-![](https://github.com/michaelmwhite/nes-starship/blob/main/recordings/demo_1.gif)
+![](https://github.com/michaelmwhite/nes-starship/blob/main/recordings/demo.gif)
