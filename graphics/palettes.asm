@@ -1,2 +1,0 @@
-  .db $0F,$20,$25,$2C, $0F,$0F,$0F,$0F, $0F,$0F,$0F,$0F, $0F,$0F,$0F,$0F  ; background palettes - 4 different color schemes
-  .db $0F,$1C,$2B,$24, $0F,$38,$2B,$24, $0F,$0F,$0F,$0F, $0F,$0F,$0F,$0F  ; sprite palettes
